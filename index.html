@@ -3970,14 +3970,40 @@ function renderEnvioForm(p, dir) {
     <!-- Tipo de entrega -->
     <div class="envio-campo">
       <label>Tipo de entrega</label>
-      <div class="tipo-entrega-btns">
-        <button class="tipo-btn ${!esRecogida?'selected':''}" onclick="seleccionarTipoEntrega('${p.id}', 'envio', this)">🚚 Envío a domicilio</button>
-        <button class="tipo-btn ${esRecogida?'selected':''}" onclick="seleccionarTipoEntrega('${p.id}', 'recogida', this)">🏪 Recogida en tienda</button>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button class="tipo-btn ${p.tipo_entrega==='recogida'?'selected':''}"
+          onclick="seleccionarTipoEntrega('${p.id}', 'recogida', this)">
+          🏪 Recogida en tienda
+        </button>
+        <button class="tipo-btn ${p.tipo_entrega==='domicilio'?'selected':''}"
+          onclick="seleccionarTipoEntrega('${p.id}', 'domicilio', this)">
+          🛵 Envío a domicilio (mensajero propio o domicilio)
+        </button>
+        <button class="tipo-btn ${(!p.tipo_entrega||p.tipo_entrega==='envio'||p.tipo_entrega==='nacional')?'selected':''}"
+          onclick="seleccionarTipoEntrega('${p.id}', 'nacional', this)">
+          📦 Envío nacional (transportadora)
+        </button>
       </div>
     </div>
 
-    <!-- Sección envío (se oculta si es recogida) -->
-    <div id="env-detalle-${p.id}" style="display:${esRecogida?'none':'block'};">
+    <!-- Sección domicilio -->
+    <div id="env-domicilio-${p.id}" style="display:${p.tipo_entrega==='domicilio'?'block':'none'};">
+      <div class="envio-campo">
+        <label>Dirección de entrega</label>
+        <div class="form-group">
+          <input type="text" id="env-dir-dom-${p.id}" value="${p.direccion_envio||dirCompleta}" placeholder="Dirección del cliente..." />
+        </div>
+      </div>
+      <div class="envio-campo">
+        <label>Notas para el domicilio</label>
+        <div class="form-group">
+          <input type="text" id="env-notas-dom-${p.id}" value="${p.notas_domicilio||''}" placeholder="Indicaciones, puntos de referencia..." />
+        </div>
+      </div>
+    </div>
+
+    <!-- Sección envío nacional (se oculta si es recogida o domicilio) -->
+    <div id="env-detalle-${p.id}" style="display:${(!p.tipo_entrega||p.tipo_entrega==='envio'||p.tipo_entrega==='nacional')?'block':'none'};">
       <!-- Dirección -->
       <div class="envio-campo">
         <label>Dirección de entrega</label>
@@ -4035,10 +4061,12 @@ function renderEnvioForm(p, dir) {
 
 // ─── TIPO ENTREGA ───
 function seleccionarTipoEntrega(pedidoId, tipo, btn) {
-  btn.closest('.tipo-entrega-btns').querySelectorAll('.tipo-btn').forEach(b => b.classList.remove('selected'));
+  btn.closest('div').querySelectorAll('.tipo-btn').forEach(b => b.classList.remove('selected'));
   btn.classList.add('selected');
-  const det = document.getElementById('env-detalle-' + pedidoId);
-  if (det) det.style.display = tipo === 'recogida' ? 'none' : 'block';
+  const detNacional  = document.getElementById('env-detalle-'   + pedidoId);
+  const detDomicilio = document.getElementById('env-domicilio-' + pedidoId);
+  if (detNacional)  detNacional.style.display  = tipo === 'nacional' ? 'block' : 'none';
+  if (detDomicilio) detDomicilio.style.display = tipo === 'domicilio' ? 'block' : 'none';
 }
 
 // ─── TRANSPORTADORA ───
@@ -4081,13 +4109,26 @@ async function guardarEnvio(pedidoId) {
   const tipoBtn = document.querySelector(`#envio-card-${pedidoId} .tipo-btn.selected`);
   const tipoEntrega = tipoBtn?.textContent.includes('Recogida') ? 'recogida' : 'envio';
 
+  // Detect tipo from selected button
+  const tipoBtn2 = document.querySelector(`#envio-card-${pedidoId} .tipo-btn.selected`);
+  const btnText = tipoBtn2?.textContent || '';
+  let tipoFinal = 'nacional';
+  if (btnText.includes('Recogida')) tipoFinal = 'recogida';
+  else if (btnText.includes('domicilio') || btnText.includes('mensajero')) tipoFinal = 'domicilio';
+  else tipoFinal = 'nacional';
+
   let payload = {
-    tipo_entrega:  tipoEntrega,
-    envio_estado:  tipoEntrega === 'recogida' ? 'recogida' : 'en_camino',
-    estado:        tipoEntrega === 'recogida' ? 'entregado' : 'enviado',
+    tipo_entrega:  tipoFinal,
+    envio_estado:  tipoFinal === 'recogida' ? 'entregado' : 'en_camino',
+    estado:        tipoFinal === 'recogida' ? 'entregado' : 'listo',
   };
 
-  if (tipoEntrega === 'envio') {
+  if (tipoFinal === 'domicilio') {
+    payload.direccion_envio  = document.getElementById('env-dir-dom-' + pedidoId)?.value || '';
+    payload.notas_domicilio  = document.getElementById('env-notas-dom-' + pedidoId)?.value || '';
+  }
+
+  if (tipoFinal === 'nacional') {
     // Transportadora
     const transpHidden = document.getElementById('env-transp-' + pedidoId);
     const transpOtra   = document.getElementById('env-transp-otra-' + pedidoId);
@@ -4118,7 +4159,7 @@ async function guardarEnvio(pedidoId) {
   if (error) {
     showToast('Error al guardar: ' + error.message, 'error');
   } else {
-    showToast(tipoEntrega === 'recogida' ? '🏪 Recogida registrada' : '🚚 Envío registrado', 'success');
+    showToast(tipoFinal === 'recogida' ? '🏪 Recogida registrada' : tipoFinal === 'domicilio' ? '🛵 Domicilio registrado' : '📦 Envío nacional registrado', 'success');
     playBeep(660, 0.15);
     loadEnvios();
   }

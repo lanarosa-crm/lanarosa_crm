@@ -3862,14 +3862,14 @@ async function loadEnvios() {
   const { data, error } = await supabase_client
     .from('pedidos')
     .select('*, clientes(nombre, telefono, ciudad, direccion, barrio)')
-    .in('estado', ['listo','enviado','entregado'])
+    .in('estado', ['listo','enviado','entregado','en proceso','en produccion'])
     .order('fecha_entrega', { ascending: true });
 
   if (error) { lista.innerHTML = `<p style="color:red">Error: ${error.message}</p>`; return; }
   enviosData = data || [];
 
   // Stats
-  const listos     = enviosData.filter(p => (p.estado === 'listo') && p.envio_estado !== 'en_camino').length;
+  const listos     = enviosData.filter(p => ['listo','en proceso','en produccion'].includes(p.estado) && p.envio_estado !== 'en_camino' && p.envio_estado !== 'entregado').length;
   const enCamino   = enviosData.filter(p => p.envio_estado === 'en_camino' || p.estado === 'enviado').length;
   const entregados = enviosData.filter(p => p.envio_estado === 'entregado' || p.estado === 'entregado').length;
   const recogida   = enviosData.filter(p => p.tipo_entrega === 'recogida').length;
@@ -3900,7 +3900,7 @@ function renderEnvios() {
   const lista = document.getElementById('env-lista');
   let rows = enviosData;
 
-  if (enviosFilter === 'listos')     rows = rows.filter(p => p.estado === 'listo' && p.envio_estado !== 'en_camino');
+  if (enviosFilter === 'listos')     rows = rows.filter(p => ['listo','en proceso','en produccion'].includes(p.estado) && p.envio_estado !== 'en_camino' && p.envio_estado !== 'entregado');
   else if (enviosFilter === 'en_camino')  rows = rows.filter(p => p.envio_estado === 'en_camino' || p.estado === 'enviado');
   else if (enviosFilter === 'entregado')  rows = rows.filter(p => p.envio_estado === 'entregado' || p.estado === 'entregado');
 

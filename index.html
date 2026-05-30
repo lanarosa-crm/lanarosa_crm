@@ -1723,6 +1723,25 @@
 
       <!-- ─── FINANZAS ─── -->
       <section class="page-section" id="section-finanzas">
+        <!-- Filtros de fecha -->
+        <div class="table-card" style="margin-bottom:20px;">
+          <div style="padding:16px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <span style="font-size:0.82rem;font-weight:600;color:var(--texto-oscuro);">📅 Filtrar por período:</span>
+            <select id="fin-filtro-tipo" onchange="onFinFiltroChange()" class="filter-select">
+              <option value="todo">Todo el historial</option>
+              <option value="mes_actual">Este mes</option>
+              <option value="mes_anterior">Mes anterior</option>
+              <option value="personalizado">Rango personalizado</option>
+            </select>
+            <div id="fin-rango-custom" style="display:none;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <input type="date" id="fin-fecha-desde" class="filter-select" onchange="loadFinanzas()" />
+              <span style="font-size:0.8rem;color:var(--texto-medio);">hasta</span>
+              <input type="date" id="fin-fecha-hasta" class="filter-select" onchange="loadFinanzas()" />
+            </div>
+            <button onclick="loadFinanzas()" class="btn-add" style="padding:7px 16px;font-size:0.8rem;">🔄 Aplicar</button>
+            <span id="fin-periodo-label" style="font-size:0.78rem;color:var(--rosa-principal);font-weight:600;margin-left:4px;"></span>
+          </div>
+        </div>
         <div class="stats-grid" style="margin-bottom:24px;">
           <div class="stat-card">
             <div class="stat-card-icon green">💵</div>
@@ -1746,7 +1765,7 @@
           </div>
         </div>
         <div class="table-card">
-          <div class="table-card-header"><h2>💰 Detalle financiero</h2></div>
+          <div class="table-card-header"><h2>💰 Detalle financiero</h2><span id="fin-num-pedidos" style="font-size:0.8rem;color:var(--texto-medio);"></span></div>
           <div class="table-wrapper">
             <table>
               <thead>
@@ -3029,9 +3048,52 @@ async function loadCalendario() {
 // ══════════════════════════════════════════════════════════
 //  FINANZAS
 // ══════════════════════════════════════════════════════════
+function onFinFiltroChange() {
+  const tipo = document.getElementById('fin-filtro-tipo')?.value;
+  const customDiv = document.getElementById('fin-rango-custom');
+  if (customDiv) customDiv.style.display = tipo === 'personalizado' ? 'flex' : 'none';
+  if (tipo !== 'personalizado') loadFinanzas();
+}
+
+function getFinFechas() {
+  const tipo = document.getElementById('fin-filtro-tipo')?.value || 'todo';
+  const hoy = new Date();
+  let desde = null, hasta = null, label = '';
+
+  if (tipo === 'mes_actual') {
+    desde = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
+    hasta = new Date(hoy.getFullYear(), hoy.getMonth()+1, 0).toISOString().split('T')[0];
+    label = hoy.toLocaleDateString('es-CO', { month:'long', year:'numeric' });
+  } else if (tipo === 'mes_anterior') {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth()-1, 1);
+    desde = d.toISOString().split('T')[0];
+    hasta = new Date(hoy.getFullYear(), hoy.getMonth(), 0).toISOString().split('T')[0];
+    label = d.toLocaleDateString('es-CO', { month:'long', year:'numeric' });
+  } else if (tipo === 'personalizado') {
+    desde = document.getElementById('fin-fecha-desde')?.value || null;
+    hasta = document.getElementById('fin-fecha-hasta')?.value || null;
+    if (desde && hasta) label = `${formatDate(desde)} — ${formatDate(hasta)}`;
+  } else {
+    label = 'Todo el historial';
+  }
+  return { desde, hasta, label };
+}
+
 async function loadFinanzas() {
-  const { data } = await supabase_client.from('pedidos').select('*, clientes(nombre)').order('fecha_pedido', { ascending: false });
+  const tb = document.getElementById('tb-finanzas');
+  if (tb) tb.innerHTML = '<tr><td colspan="7"><div class="loading-spinner"></div></td></tr>';
+
+  const { desde, hasta, label } = getFinFechas();
+  const labelEl = document.getElementById('fin-periodo-label');
+  if (labelEl) labelEl.textContent = label ? `— ${label}` : '';
+
+  let q = supabase_client.from('pedidos').select('*, clientes(nombre)').order('fecha_pedido', { ascending: false });
+  if (desde) q = q.gte('fecha_pedido', desde);
+  if (hasta) q = q.lte('fecha_pedido', hasta);
+
+  const { data } = await q;
   const rows = data || [];
+
   const total    = rows.reduce((s,p) => s + (Number(p.precio_total)||0), 0);
   const cobrado  = rows.reduce((s,p) => s + (Number(p.anticipo)||0), 0);
   const pendiente= total - cobrado;
@@ -3042,8 +3104,13 @@ async function loadFinanzas() {
   document.getElementById('fin-pendiente').textContent= formatCOP(pendiente);
   document.getElementById('fin-promedio').textContent = formatCOP(Math.round(promedio));
 
-  const tb = document.getElementById('tb-finanzas');
-  if (!rows.length) { tb.innerHTML = '<tr><td colspan="7"><div class="table-empty"><div class="table-empty-icon">💰</div><p>No hay datos financieros</p></div></td></tr>'; return; }
+  const numEl = document.getElementById('fin-num-pedidos');
+  if (numEl) numEl.textContent = rows.length + ' pedido' + (rows.length !== 1 ? 's' : '');
+
+  if (!rows.length) {
+    tb.innerHTML = '<tr><td colspan="7"><div class="table-empty"><div class="table-empty-icon">💰</div><p>No hay datos para este período</p></div></td></tr>';
+    return;
+  }
   tb.innerHTML = rows.map(p => {
     const saldo = (p.precio_total||0) - (p.anticipo||0);
     return `<tr>
